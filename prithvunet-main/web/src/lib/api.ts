@@ -23,6 +23,7 @@ import {
   WAQI_API_BASE,
   WAQI_API_TOKEN,
   MONITORED_CITIES,
+  EXTENDED_AIR_CITIES,
   AQI_BREAKPOINTS,
   AIR_LIMITS,
   WATER_LIMITS,
@@ -274,39 +275,51 @@ function randomInRange(min: number, max: number): number {
 
 function generateSimulatedAirData(): AQIReading[] {
   const now = new Date().toISOString();
-  return MONITORED_CITIES.map((city) => {
-    // Simulate realistic AQI — Delhi/Kanpur higher, South India lower
-    const baseAQI =
-      city.state === "Delhi" || city.state === "Uttar Pradesh" || city.state === "Bihar"
-        ? randomInRange(120, 350)
-        : city.state === "Karnataka" || city.state === "Tamil Nadu"
-          ? randomInRange(40, 150)
-          : randomInRange(60, 250);
+  return EXTENDED_AIR_CITIES.map((station, index) => {
+    // Simulate realistic AQI based on region — North India higher, South/Northeast lower
+    const s = station.state;
+    const isNorthHighPollution =
+      s === "Delhi" || s === "Uttar Pradesh" || s === "Bihar" || s === "Haryana" ||
+      s === "Punjab" || s === "Rajasthan" || s === "Jharkhand" || s === "West Bengal";
+    const isSouthLowPollution =
+      s === "Karnataka" || s === "Tamil Nadu" || s === "Kerala" ||
+      s === "Goa" || s === "Sikkim" || s === "Arunachal Pradesh" || s === "Mizoram";
+    const isIndustrialHeavy =
+      s === "Chhattisgarh" || s === "Odisha" || s === "Madhya Pradesh" ||
+      s === "Gujarat" || s === "Maharashtra";
+
+    const baseAQI = isNorthHighPollution
+      ? randomInRange(100, 380)
+      : isSouthLowPollution
+        ? randomInRange(25, 130)
+        : isIndustrialHeavy
+          ? randomInRange(80, 280)
+          : randomInRange(50, 200);
 
     const aqi = Math.round(baseAQI);
     return {
-      stationId: `SIM_${city.uid}`,
-      stationName: city.name,
-      city: city.city,
-      state: city.state,
-      lat: 20 + Math.random() * 12,
-      lng: 72 + Math.random() * 15,
+      stationId: `SIM_${index}_${station.city.replace(/\s+/g, "_")}`,
+      stationName: station.name,
+      city: station.city,
+      state: station.state,
+      lat: station.lat,
+      lng: station.lng,
       aqi,
       category: getAQICategory(aqi),
       dominantPollutant: aqi > 200 ? "pm25" : aqi > 100 ? "pm10" : "o3",
       pollutants: {
-        pm25: randomInRange(15, aqi * 1.2),
-        pm10: randomInRange(30, aqi * 1.8),
-        so2: randomInRange(5, 80),
-        no2: randomInRange(10, 90),
-        co: randomInRange(2, 25),
-        o3: randomInRange(10, 120),
+        pm25: randomInRange(10, Math.min(aqi * 1.1, 450)),
+        pm10: randomInRange(20, Math.min(aqi * 1.6, 600)),
+        so2: randomInRange(4, 75),
+        no2: randomInRange(8, 85),
+        co: randomInRange(1, 22),
+        o3: randomInRange(8, 110),
       },
       weather: {
-        temp: randomInRange(22, 38),
-        humidity: randomInRange(30, 85),
-        windSpeed: randomInRange(1, 15),
-        pressure: randomInRange(1005, 1020),
+        temp: randomInRange(18, 42),
+        humidity: randomInRange(25, 90),
+        windSpeed: randomInRange(0.5, 18),
+        pressure: randomInRange(1003, 1022),
       },
       timestamp: now,
     };

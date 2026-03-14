@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wind, Droplets, Volume2, MapPin, AlertTriangle, ExternalLink, Info, Shield, ChevronDown, ChevronUp } from "lucide-react";
+import { MapPin, ExternalLink, Info, Shield } from "lucide-react";
 import { fetchMergedAirData, generateWaterData, generateNoiseData, getAQICategory, getAQIColor, getAQIEmoji } from "@/lib/api";
 import type { AQIReading, ComplaintCategory, PublicComplaintPayload, WaterReading, NoiseReading } from "@/lib/types";
 
@@ -19,8 +19,6 @@ export default function CitizenPage() {
   const [waterData, setWaterData] = useState<WaterReading[]>([]);
   const [noiseData, setNoiseData] = useState<NoiseReading[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedCity, setExpandedCity] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"air" | "water" | "noise">("air");
   const [complaint, setComplaint] = useState<PublicComplaintPayload>({
     name: "",
     mobile: "",
@@ -187,173 +185,10 @@ export default function CitizenPage() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="mb-4 flex gap-1 rounded-xl bg-card p-1">
-          {[
-            { id: "air" as const, label: "Air Quality", icon: <Wind size={14} /> },
-            { id: "water" as const, label: "Water Quality", icon: <Droplets size={14} /> },
-            { id: "noise" as const, label: "Noise Levels", icon: <Volume2 size={14} /> },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-all ${
-                activeTab === tab.id ? "bg-primary text-white" : "text-muted hover:text-white"
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Air Quality Tab */}
-        {activeTab === "air" && (
-          <div className="space-y-3">
-            {airData.map((r) => (
-              <div key={r.stationId} className="rounded-xl border border-border bg-card overflow-hidden">
-                <button
-                  onClick={() => setExpandedCity(expandedCity === r.stationId ? null : r.stationId)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
-                      style={{ backgroundColor: getAQIColor(r.aqi) }}
-                    >
-                      {r.aqi}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-white">{r.city}</p>
-                      <p className="text-xs text-muted">{r.stationName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium" style={{ color: getAQIColor(r.aqi) }}>
-                      {getAQICategory(r.aqi)}
-                    </span>
-                    {expandedCity === r.stationId ? <ChevronUp size={14} className="text-muted" /> : <ChevronDown size={14} className="text-muted" />}
-                  </div>
-                </button>
-                {expandedCity === r.stationId && (
-                  <div className="border-t border-border px-4 py-3">
-                    <HealthAdvisory aqi={r.aqi} />
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {[
-                        { label: "PM₂.₅", value: r.pollutants.pm25, unit: "µg/m³", limit: 60 },
-                        { label: "PM₁₀", value: r.pollutants.pm10, unit: "µg/m³", limit: 100 },
-                        { label: "SO₂", value: r.pollutants.so2, unit: "µg/m³", limit: 80 },
-                        { label: "NO₂", value: r.pollutants.no2, unit: "µg/m³", limit: 80 },
-                      ].map((p) => (
-                        <div key={p.label} className="rounded-lg bg-background p-2 text-center">
-                          <p className="text-xs text-muted">{p.label}</p>
-                          <p className={`text-lg font-bold ${p.value && p.value > p.limit ? "text-red-400" : "text-green-400"}`}>
-                            {p.value ?? "—"}
-                          </p>
-                          <p className="text-[10px] text-muted">{p.unit}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Water Quality Tab */}
-        {activeTab === "water" && (
-          <div className="space-y-3">
-            {waterData.map((r) => {
-              const wColor = r.status === "Safe" ? "#22c55e" : r.status === "Caution" ? "#f59e0b" : r.status === "Polluted" ? "#f97316" : "#ef4444";
-              return (
-                <div key={r.stationId} className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Droplets size={20} style={{ color: wColor }} />
-                      <div>
-                        <p className="text-sm font-semibold text-white">💧 {r.riverName}</p>
-                        <p className="text-xs text-muted">{r.stationName} • {r.city}</p>
-                      </div>
-                    </div>
-                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ backgroundColor: wColor }}>
-                      {r.status}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <div className="rounded-lg bg-background p-2 text-center">
-                      <p className="text-xs text-muted">BOD</p>
-                      <p className={`text-lg font-bold ${(r.parameters.bod ?? 0) > 3 ? "text-red-400" : "text-green-400"}`}>{r.parameters.bod ?? "—"}</p>
-                      <p className="text-[10px] text-muted">mg/L</p>
-                    </div>
-                    <div className="rounded-lg bg-background p-2 text-center">
-                      <p className="text-xs text-muted">DO</p>
-                      <p className={`text-lg font-bold ${(r.parameters.dissolvedOxygen ?? 0) < 5 ? "text-red-400" : "text-green-400"}`}>{r.parameters.dissolvedOxygen ?? "—"}</p>
-                      <p className="text-[10px] text-muted">mg/L</p>
-                    </div>
-                    <div className="rounded-lg bg-background p-2 text-center">
-                      <p className="text-xs text-muted">pH</p>
-                      <p className={`text-lg font-bold ${(r.parameters.ph ?? 7) < 6.5 || (r.parameters.ph ?? 7) > 8.5 ? "text-red-400" : "text-green-400"}`}>{r.parameters.ph ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg bg-background p-2 text-center">
-                      <p className="text-xs text-muted">Temp</p>
-                      <p className="text-lg font-bold text-blue-400">{r.parameters.temperature ?? "—"}°C</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Noise Tab */}
-        {activeTab === "noise" && (
-          <div className="space-y-3">
-            {noiseData.map((r) => (
-              <div key={r.stationId} className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Volume2 size={20} className={r.exceedance ? "text-red-400" : "text-purple-400"} />
-                    <div>
-                      <p className="text-sm font-semibold text-white">{r.stationName}</p>
-                      <p className="text-xs text-muted">{r.city} • {r.zone} Zone</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-lg font-bold ${r.exceedance ? "text-red-400" : "text-green-400"}`}>{r.leq} dB(A)</p>
-                    <p className="text-[10px] text-muted">Limit: {r.limit} dB(A)</p>
-                  </div>
-                </div>
-                {r.exceedance && (
-                  <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-500/10 p-2 text-xs text-red-400">
-                    <AlertTriangle size={12} /> Noise level exceeds {r.zone} zone {r.dayNight} limit by {(r.leq - r.limit).toFixed(1)} dB(A)
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Info Section */}
-        <div className="mt-8 rounded-xl border border-border bg-card p-5">
-          <div className="flex items-start gap-3">
-            <Info size={20} className="mt-0.5 shrink-0 text-blue-400" />
-            <div>
-              <p className="text-sm font-semibold text-white">About PrithviNet</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
-                PrithviNet is a smart environmental monitoring platform that tracks air quality,
-                water quality, and noise levels across India in real-time. We source data from CPCB
-                (Central Pollution Control Board) monitoring networks including CAAQMS for air, RTWQMS
-                for water, and noise monitoring stations. Our AI-powered system provides forecasts,
-                anomaly detection, and compliance tracking for industries.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted">
-                <span className="flex items-center gap-1"><Shield size={12} className="text-green-400" /> CPCB Data Standards</span>
-                <span className="flex items-center gap-1"><MapPin size={12} className="text-blue-400" /> Pan-India Coverage</span>
-                <span className="flex items-center gap-1"><ExternalLink size={12} /> <a href="https://cpcb.nic.in" target="_blank" className="hover:text-primary">cpcb.nic.in</a></span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <section className="rounded-2xl border border-border bg-card p-6 text-sm text-zinc-300">
+          Station-wise Air, Water, and Noise listings are hidden on this public page as requested.
+          Please use the map and module pages for detailed station-level monitoring.
+        </section>
 
         <section className="mt-8 rounded-2xl border border-border bg-card p-6 sm:p-8">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -427,6 +262,28 @@ export default function CitizenPage() {
             </div>
           </form>
         </section>
+
+        {/* Info Section */}
+        <div className="mt-8 rounded-xl border border-border bg-card p-5">
+          <div className="flex items-start gap-3">
+            <Info size={20} className="mt-0.5 shrink-0 text-blue-400" />
+            <div>
+              <p className="text-sm font-semibold text-white">About PrithviNet</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">
+                PrithviNet is a smart environmental monitoring platform that tracks air quality,
+                water quality, and noise levels across India in real-time. We source data from CPCB
+                (Central Pollution Control Board) monitoring networks including CAAQMS for air, RTWQMS
+                for water, and noise monitoring stations. Our AI-powered system provides forecasts,
+                anomaly detection, and compliance tracking for industries.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted">
+                <span className="flex items-center gap-1"><Shield size={12} className="text-green-400" /> CPCB Data Standards</span>
+                <span className="flex items-center gap-1"><MapPin size={12} className="text-blue-400" /> Pan-India Coverage</span>
+                <span className="flex items-center gap-1"><ExternalLink size={12} /> <a href="https://cpcb.nic.in" target="_blank" className="hover:text-primary">cpcb.nic.in</a></span>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
 
       {/* Footer */}

@@ -49,7 +49,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Main",
     items: [
-      { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
       { name: "Pollution Map", href: "/map", icon: Map, roles: ["super_admin", "regional_officer", "monitoring_team", "citizen"] },
       { name: "Alerts", href: "/alerts", icon: Bell, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
     ],

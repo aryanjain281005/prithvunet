@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 
 function isShellFreePath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/unauthorized" || pathname.startsWith("/citizen");
+  return pathname === "/" || pathname === "/login" || pathname === "/unauthorized" || pathname.startsWith("/citizen");
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

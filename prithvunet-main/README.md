@@ -1,4 +1,4 @@
-# 🌍 PrithviNet — Smart Environmental Monitoring & Compliance Platform
+#  PrithviNet — Smart Environmental Monitoring & Compliance Platform
 
 **Air • Water • Noise — Real-time Monitoring for India**
 

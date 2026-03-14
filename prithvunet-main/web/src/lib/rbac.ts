@@ -26,7 +26,7 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 const ROUTE_RULES: Array<{ pattern: RegExp; roles: UserRole[] }> = [
-  { pattern: /^\/$/, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
+  { pattern: /^\/dashboard(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
   { pattern: /^\/map(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team", "citizen"] },
   { pattern: /^\/alerts(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
   { pattern: /^\/monitoring\/submit(?:\/|$)/, roles: ["industry_user"] },
@@ -64,13 +64,14 @@ export function getRoleHomePath(role: UserRole): string {
     case "regional_officer":
       return "/compliance";
     case "super_admin":
+      return "/dashboard";
     default:
-      return "/";
+      return "/dashboard";
   }
 }
 
 export function isPublicPath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/unauthorized" || pathname.startsWith("/citizen");
+  return pathname === "/" || pathname === "/login" || pathname === "/unauthorized" || pathname.startsWith("/citizen");
 }
 
 export function isPublicApiPath(pathname: string): boolean {
