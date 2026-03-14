@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Map,
   Bell,
+  Droplets,
   Factory,
   BarChart3,
   Bot,
@@ -24,8 +25,8 @@ import {
   Siren,
   ChevronRight,
   LogOut,
+  Volume2,
 } from "lucide-react";
-  import { Volume2 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
@@ -68,6 +69,13 @@ const navGroups: NavGroup[] = [
     items: [
       { name: "Cases", href: "/compliance", icon: Shield, roles: ["super_admin", "regional_officer"] },
       { name: "Industries", href: "/industries", icon: Factory, roles: ["super_admin", "regional_officer", "industry_user"] },
+    ],
+  },
+  {
+    label: "Water",
+    collapsible: true,
+    items: [
+      { name: "Water Monitor", href: "/water", icon: Droplets, roles: ["super_admin", "regional_officer", "monitoring_team"] },
     ],
   },
     {

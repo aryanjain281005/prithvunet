@@ -418,6 +418,7 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
   const detailCacheRef = useRef<Record<string, IndustryDetail>>({});
   const warmupRequestedRef = useRef(false);
   const warmupRefreshTimerRef = useRef<number | null>(null);
+  const mapPrefetchTimerRef = useRef<number | null>(null);
   const mapPrefetchRunningRef = useRef(false);
   const requestFiltersRef = useRef<IndustryFilters>(filters);
   const deferredSearch = useDeferredValue(filters.search);
@@ -595,7 +596,7 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
 
   const preloadVisibleDetails = async (items: IndustrySummary[]) => {
     const nextIds = items
-      .slice(0, 10)
+      .slice(0, 4)
       .map((item) => item.id)
       .filter((industryId) => !detailCacheRef.current[industryId]);
 
@@ -604,7 +605,7 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
     }
 
     await Promise.allSettled(nextIds.map((industryId) => fetchIndustryDetail(industryId)));
-    await loadStats(requestFiltersRef.current);
+    void loadStats(requestFiltersRef.current);
   };
 
   const preloadUnknownMapDetails = async (markers: IndustryMarker[]) => {
@@ -616,7 +617,7 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
       .filter((marker) => marker.status === "Unknown")
       .map((marker) => marker.id)
       .filter((industryId) => !detailCacheRef.current[industryId])
-      .slice(0, 60);
+      .slice(0, 12);
 
     if (unknownIds.length === 0) {
       return;
@@ -626,7 +627,7 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
     setWarmingCompliance(true);
 
     try {
-      const chunkSize = 8;
+      const chunkSize = 4;
       for (let index = 0; index < unknownIds.length; index += chunkSize) {
         const chunk = unknownIds.slice(index, index + chunkSize);
         await Promise.allSettled(chunk.map((industryId) => fetchIndustryDetail(industryId)));
@@ -697,7 +698,12 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
         scheduleWarmupRefresh();
       }
 
-      void preloadUnknownMapDetails(nextMarkers);
+      if (mapPrefetchTimerRef.current) {
+        window.clearTimeout(mapPrefetchTimerRef.current);
+      }
+      mapPrefetchTimerRef.current = window.setTimeout(() => {
+        void preloadUnknownMapDetails(nextMarkers);
+      }, 1200);
     } catch {
       setMapMarkers([]);
       setMapTotalMatched(0);
@@ -780,6 +786,9 @@ export function IndustryProvider({ children }: { children: ReactNode }) {
     return () => {
       if (warmupRefreshTimerRef.current) {
         window.clearTimeout(warmupRefreshTimerRef.current);
+      }
+      if (mapPrefetchTimerRef.current) {
+        window.clearTimeout(mapPrefetchTimerRef.current);
       }
     };
   }, []);

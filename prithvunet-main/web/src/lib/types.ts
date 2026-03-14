@@ -64,6 +64,22 @@ export interface WaterReading {
   timestamp: string;
 }
 
+export type WaterStatus = WaterReading["status"];
+
+export interface WaterApiResponse {
+  stations: WaterReading[];
+  filters: {
+    states: string[];
+    cities: string[];
+    stations: string[];
+    statuses: WaterStatus[];
+  };
+  meta: {
+    count: number;
+    updatedAt: string;
+  };
+}
+
 // --- Noise Types ---
 export interface NoiseReading {
   stationId: string;

@@ -37,6 +37,8 @@ interface ServerBridgePayload {
   mode: string;
 }
 
+type NoiseFetchMode = "fast" | "full";
+
 const CPCB_URL = "http://www.cpcbnoise.com/index3.php";
 
 const PROXIES = [
@@ -215,7 +217,7 @@ async function tryLiveProxy(stationId: number): Promise<NoiseStation | null> {
       : `${proxy.prefix}${targetUrl}`;
 
     try {
-      const xml = await fetchText(requestUrl, 5000);
+      const xml = await fetchText(requestUrl, 1500);
       if (!xml.includes("<canal") || xml.includes("Unauthorised")) {
         continue;
       }
@@ -236,7 +238,7 @@ async function tryLiveProxy(stationId: number): Promise<NoiseStation | null> {
 
 async function tryLiveBridge(stationId: number): Promise<NoiseStation | null> {
   try {
-    const { signal, clear } = withTimeout(8000);
+    const { signal, clear } = withTimeout(3500);
     try {
       const response = await fetch(`/api/noise/live/${stationId}`, {
         method: "GET",
@@ -282,7 +284,7 @@ async function tryLiveBridge(stationId: number): Promise<NoiseStation | null> {
 
 async function trySnapshot(stationId: number): Promise<NoiseStation | null> {
   try {
-    const { signal, clear } = withTimeout(3000);
+    const { signal, clear } = withTimeout(2000);
     try {
       const response = await fetch(`/api/noise/snapshot/${stationId}`, {
         method: "GET",
@@ -343,7 +345,16 @@ export function simulateFromBaseline(stationId: number): NoiseStation {
   );
 }
 
-export async function fetchStationData(stationId: number): Promise<NoiseStation> {
+export async function fetchStationData(stationId: number, mode: NoiseFetchMode = "full"): Promise<NoiseStation> {
+  if (mode === "fast") {
+    const snapshot = await trySnapshot(stationId);
+    if (snapshot) {
+      return snapshot;
+    }
+
+    return simulateFromBaseline(stationId);
+  }
+
   const bridgeLive = await tryLiveBridge(stationId);
   if (bridgeLive) {
     return bridgeLive;
@@ -362,8 +373,10 @@ export async function fetchStationData(stationId: number): Promise<NoiseStation>
   return simulateFromBaseline(stationId);
 }
 
-export async function fetchAllStationData(): Promise<NoiseStation[]> {
-  const results = await Promise.allSettled(BASELINE_STATION_IDS.map((stationId) => fetchStationData(stationId)));
+export async function fetchAllStationData(mode: NoiseFetchMode = "full"): Promise<NoiseStation[]> {
+  const results = await Promise.allSettled(
+    BASELINE_STATION_IDS.map((stationId) => fetchStationData(stationId, mode))
+  );
 
   return results.flatMap((result, index) => {
     if (result.status === "fulfilled") {

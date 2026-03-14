@@ -34,6 +34,7 @@ const ROUTE_RULES: Array<{ pattern: RegExp; roles: UserRole[] }> = [
   { pattern: /^\/monitoring\/campaigns(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team"] },
   { pattern: /^\/compliance(?:\/|$)/, roles: ["super_admin", "regional_officer"] },
   { pattern: /^\/industries(?:\/|$)/, roles: ["super_admin", "regional_officer", "industry_user"] },
+  { pattern: /^\/water(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team"] },
   { pattern: /^\/noise(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team", "citizen"] },
   { pattern: /^\/reports(?:\/|$)/, roles: ["super_admin", "regional_officer", "monitoring_team"] },
   { pattern: /^\/copilot(?:\/|$)/, roles: ["super_admin", "regional_officer"] },
