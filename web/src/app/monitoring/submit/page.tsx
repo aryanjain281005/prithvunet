@@ -1,226 +1,215 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Wind, Droplets, Volume2, Send, CheckCircle2, AlertTriangle } from "lucide-react";
-import { useSupabaseCRUD } from "@/lib/useSupabaseCRUD";
-
-type SubmissionType = "air" | "water" | "noise";
-
-interface Submission {
-  id: string;
-  type: SubmissionType;
-  station: string;
-  timestamp: string;
-  submittedBy: string;
-  status: "Submitted" | "Validated" | "Rejected";
-  data: Record<string, number>;
-}
-
-const RECENT_SUBMISSIONS: Submission[] = [
-  { id: "SUB001", type: "air", station: "Anand Vihar CAAQMS", timestamp: "2026-03-10 10:30", submittedBy: "Arun Patel", status: "Validated", data: { pm25: 185, pm10: 240, so2: 25, no2: 45, co: 12, o3: 35 } },
-  { id: "SUB002", type: "water", station: "Yamuna at Okhla", timestamp: "2026-03-10 09:15", submittedBy: "Kavita Joshi", status: "Submitted", data: { bod: 8.5, do: 3.2, ph: 7.8, temp: 24, cod: 32, turbidity: 18 } },
-  { id: "SUB003", type: "noise", station: "Peenya Industrial NMS", timestamp: "2026-03-10 08:00", submittedBy: "Suresh Reddy", status: "Validated", data: { leq: 72, lmax: 85, lmin: 48 } },
-  { id: "SUB004", type: "air", station: "ITO Junction CAAQMS", timestamp: "2026-03-09 18:00", submittedBy: "Meena Devi", status: "Rejected", data: { pm25: 0, pm10: 0, so2: 0, no2: 0 } },
-  { id: "SUB005", type: "water", station: "Ganga at Varanasi", timestamp: "2026-03-09 16:45", submittedBy: "Rahul Nair", status: "Validated", data: { bod: 2.1, do: 6.8, ph: 7.2, temp: 22 } },
-];
-
-const airFields = [
-  { key: "pm25", label: "PM₂.₅", unit: "µg/m³", limit: 60 },
-  { key: "pm10", label: "PM₁₀", unit: "µg/m³", limit: 100 },
-  { key: "so2", label: "SO₂", unit: "µg/m³", limit: 80 },
-  { key: "no2", label: "NO₂", unit: "µg/m³", limit: 80 },
-  { key: "co", label: "CO", unit: "mg/m³", limit: 4 },
-  { key: "o3", label: "O₃", unit: "µg/m³", limit: 180 },
-  { key: "nh3", label: "NH₃", unit: "µg/m³", limit: 400 },
-];
-
-const waterFields = [
-  { key: "bod", label: "BOD", unit: "mg/L", limit: 3 },
-  { key: "do", label: "Dissolved Oxygen", unit: "mg/L", limit: 4 },
-  { key: "ph", label: "pH", unit: "", limit: 8.5 },
-  { key: "temp", label: "Temperature", unit: "°C", limit: 40 },
-  { key: "nitrate", label: "Nitrate", unit: "mg/L", limit: 45 },
-  { key: "cod", label: "COD", unit: "mg/L", limit: 50 },
-  { key: "turbidity", label: "Turbidity", unit: "NTU", limit: 25 },
-];
-
-const noiseFields = [
-  { key: "leq", label: "Leq (Equivalent)", unit: "dB(A)", limit: 75 },
-  { key: "lmax", label: "Lmax (Maximum)", unit: "dB(A)", limit: 90 },
-  { key: "lmin", label: "Lmin (Minimum)", unit: "dB(A)", limit: 40 },
-];
-
-const statusStyle = {
-  Submitted: "bg-blue-500/20 text-blue-400",
-  Validated: "bg-green-500/20 text-green-400",
-  Rejected: "bg-red-500/20 text-red-400",
-};
+import { AlertTriangle, CheckCircle2, ClipboardList, Factory, Send } from "lucide-react";
+import {
+  buildAirReadings,
+  buildRiskRows,
+  buildWaterReadings,
+  getRepositoryState,
+  MonitoringSource,
+  REPORT_KIND_LABELS,
+  ReportKind,
+  seedIndustryDemoData,
+  SOURCE_LABELS,
+  submitIndustryReport,
+} from "@/lib/industryCompliance";
 
 export default function SubmitPage() {
-  const [type, setType] = useState<SubmissionType>("air");
-  const [formData, setFormData] = useState<Record<string, string>>({});
-  const [station, setStation] = useState("");
-  const { data: submissions, addItem } = useSupabaseCRUD<Submission>("submissions", RECENT_SUBMISSIONS);
-  const [submitted, setSubmitted] = useState(false);
-  const [violations, setViolations] = useState<string[]>([]);
-
-  const fields = type === "air" ? airFields : type === "water" ? waterFields : noiseFields;
+  const [industryId, setIndustryId] = useState("IND-102");
+  const [location, setLocation] = useState("Gujarat Steel Plant");
+  const [region, setRegion] = useState("Gujarat");
+  const [submittedBy, setSubmittedBy] = useState("Vikram Singh");
+  const [reportKind, setReportKind] = useState<ReportKind>("monthly_compliance");
+  const [monitoringSource, setMonitoringSource] = useState<MonitoringSource>("self_report");
+  const [so2, setSo2] = useState("120");
+  const [nox, setNox] = useState("88");
+  const [pm25, setPm25] = useState("76");
+  const [ph, setPh] = useState("8.1");
+  const [bod, setBod] = useState("26");
+  const [cod, setCod] = useState("210");
+  const [noiseDb, setNoiseDb] = useState("78");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [lastViolationCount, setLastViolationCount] = useState<number | null>(null);
+  const [repository, setRepository] = useState(() => {
+    seedIndustryDemoData();
+    return getRepositoryState();
+  });
+  const latestReports = repository.submissions.slice(0, 8);
+  const topRisk = buildRiskRows().slice(0, 3);
 
   const handleSubmit = () => {
-    if (!station) return;
-    const data: Record<string, number> = {};
-    const viols: string[] = [];
-    fields.forEach((f) => {
-      const val = parseFloat(formData[f.key] || "0");
-      data[f.key] = val;
-      if (f.key === "do" ? val < f.limit : val > f.limit) {
-        viols.push(`${f.label}: ${val} ${f.unit} exceeds limit (${f.limit} ${f.unit})`);
-      }
+    setSubmitting(true);
+    setMessage("");
+
+    const report = submitIndustryReport({
+      industryId,
+      location,
+      region,
+      reportKind,
+      monitoringSource,
+      submittedBy,
+      airPollutants: buildAirReadings({
+        so2: Number(so2),
+        nox: Number(nox),
+        pm25: Number(pm25),
+      }),
+      waterPollutants: buildWaterReadings({
+        ph: Number(ph),
+        bod: Number(bod),
+        cod: Number(cod),
+      }),
+      noiseLevelDb: Number(noiseDb),
+      noiseLimitDb: 75,
     });
-    setViolations(viols);
-    const newSub: Submission = {
-      id: `SUB${String(submissions.length + 1).padStart(3, "0")}`,
-      type,
-      station,
-      timestamp: new Date().toLocaleString("en-IN"),
-      submittedBy: "Current User",
-      status: "Submitted",
-      data,
-    };
-    addItem(newSub);
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 4000);
-    setFormData({});
-    setStation("");
+
+    setLastViolationCount(report.violationCount);
+    setMessage(`Report ${report.id} submitted to Environmental Data Repository.`);
+    setSubmitting(false);
+    setRepository(getRepositoryState());
   };
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Environmental Data Submission</h1>
-        <p className="text-sm text-muted">Submit Air, Water, or Noise monitoring data</p>
+        <h1 className="text-2xl font-bold text-white">Industry Pollution Report Submission</h1>
+        <p className="text-sm text-muted">Industry users submit daily, monthly, and special monitoring reports for compliance checks</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        {/* Submission Form */}
         <div className="lg:col-span-3">
           <div className="rounded-xl border border-border bg-card p-6">
-            {/* Type selector */}
-            <div className="mb-5 flex gap-2">
-              {([
-                { id: "air" as const, label: "Air Quality", icon: Wind, color: "yellow" },
-                { id: "water" as const, label: "Water Quality", icon: Droplets, color: "blue" },
-                { id: "noise" as const, label: "Noise Level", icon: Volume2, color: "purple" },
-              ]).map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => { setType(t.id); setFormData({}); setViolations([]); }}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
-                    type === t.id ? `bg-${t.color}-500/15 text-${t.color}-400 border border-${t.color}-500/30` : "border border-border text-muted hover:text-white"
-                  }`}
-                >
-                  <t.icon size={16} /> {t.label}
-                </button>
-              ))}
+            <div className="mb-5 grid gap-4 sm:grid-cols-2">
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Industry ID</span>
+                <input value={industryId} onChange={(e) => setIndustryId(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" />
+              </label>
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Location</span>
+                <input value={location} onChange={(e) => setLocation(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" />
+              </label>
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Region</span>
+                <input value={region} onChange={(e) => setRegion(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" />
+              </label>
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Submitted By</span>
+                <input value={submittedBy} onChange={(e) => setSubmittedBy(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" />
+              </label>
             </div>
 
-            {/* Station selection */}
-            <div className="mb-4">
-              <label className="mb-1.5 block text-xs font-medium text-muted">Monitoring Station</label>
-              <input
-                type="text"
-                placeholder="Enter station name or ID..."
-                value={station}
-                onChange={(e) => setStation(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white placeholder:text-muted focus:border-primary focus:outline-none"
-              />
-            </div>
-
-            {/* Parameter fields */}
-            <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {fields.map((f) => (
-                <div key={f.key}>
-                  <label className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-muted">{f.label}</span>
-                    <span className="text-[10px] text-muted">Limit: {f.limit} {f.unit}</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={formData[f.key] || ""}
-                      onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
-                      className={`w-full rounded-lg border px-3 py-2.5 text-sm text-white placeholder:text-muted focus:outline-none ${
-                        formData[f.key] && (f.key === "do" ? parseFloat(formData[f.key]) < f.limit : parseFloat(formData[f.key]) > f.limit)
-                          ? "border-red-500/50 bg-red-500/5"
-                          : "border-border bg-background focus:border-primary"
-                      }`}
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">{f.unit}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Violations warning */}
-            {violations.length > 0 && (
-              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-red-400">
-                  <AlertTriangle size={14} /> Limit Violations Detected
-                </div>
-                <ul className="mt-2 space-y-1">
-                  {violations.map((v, i) => (
-                    <li key={i} className="text-xs text-red-400/80">• {v}</li>
+            <div className="mb-5 grid gap-4 sm:grid-cols-2">
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Report Type</span>
+                <select value={reportKind} onChange={(e) => setReportKind(e.target.value as ReportKind)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none">
+                  {Object.entries(REPORT_KIND_LABELS).map(([key, value]) => (
+                    <option key={key} value={key}>{value}</option>
                   ))}
-                </ul>
+                </select>
+              </label>
+              <label>
+                <span className="mb-1.5 block text-xs text-muted">Monitoring Source</span>
+                <select value={monitoringSource} onChange={(e) => setMonitoringSource(e.target.value as MonitoringSource)} className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none">
+                  {Object.entries(SOURCE_LABELS).map(([key, value]) => (
+                    <option key={key} value={key}>{value}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-semibold text-white">Air Pollutants</h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label><span className="mb-1.5 block text-xs text-muted">SO2 (limit 80)</span><input type="number" value={so2} onChange={(e) => setSo2(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+                <label><span className="mb-1.5 block text-xs text-muted">NOx (limit 80)</span><input type="number" value={nox} onChange={(e) => setNox(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+                <label><span className="mb-1.5 block text-xs text-muted">PM2.5 (limit 60)</span><input type="number" value={pm25} onChange={(e) => setPm25(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-semibold text-white">Water Pollutants</h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label><span className="mb-1.5 block text-xs text-muted">pH (6.5 to 8.5)</span><input type="number" step="0.1" value={ph} onChange={(e) => setPh(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+                <label><span className="mb-1.5 block text-xs text-muted">BOD (limit 30)</span><input type="number" value={bod} onChange={(e) => setBod(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+                <label><span className="mb-1.5 block text-xs text-muted">COD (limit 250)</span><input type="number" value={cod} onChange={(e) => setCod(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+              </div>
+            </div>
+
+            <div className="mb-5">
+              <h3 className="mb-2 text-sm font-semibold text-white">Noise Level</h3>
+              <label><span className="mb-1.5 block text-xs text-muted">dB (limit 75)</span><input type="number" value={noiseDb} onChange={(e) => setNoiseDb(e.target.value)} className="w-full max-w-xs rounded-lg border border-border bg-background px-3 py-2 text-sm text-white focus:border-primary focus:outline-none" /></label>
+            </div>
+
+            {message && (
+              <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-300">
+                <div className="flex items-center gap-2"><CheckCircle2 size={14} /> {message}</div>
+                {lastViolationCount !== null && (
+                  <p className="mt-1 text-xs text-zinc-200">
+                    Auto-limit check complete: {lastViolationCount} violation(s) detected and pushed to compliance alerts.
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Success message */}
-            {submitted && (
-              <div className="mb-4 flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/5 p-3 text-sm text-green-400">
-                <CheckCircle2 size={14} /> Data submitted successfully! Auto-compliance check triggered.
-              </div>
-            )}
-
-            {/* Submit */}
-            <button onClick={handleSubmit} className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-dark">
+            <button disabled={submitting} onClick={handleSubmit} className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60">
               <Send size={14} /> Submit Data
             </button>
           </div>
         </div>
 
-        {/* Recent Submissions */}
         <div className="lg:col-span-2">
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
-              <ClipboardList size={16} className="text-primary" /> Recent Submissions
+              <ClipboardList size={16} className="text-primary" /> Environmental Data Repository
             </h3>
             <div className="space-y-3">
-              {submissions.slice(0, 8).map((s) => {
-                const Icon = s.type === "air" ? Wind : s.type === "water" ? Droplets : Volume2;
+              {latestReports.map((s) => {
                 return (
                   <div key={s.id} className="rounded-lg border border-border bg-background p-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
-                        <Icon size={14} className="text-muted" />
+                        <Factory size={14} className="text-muted" />
                         <div>
-                          <p className="text-xs font-medium text-white">{s.station}</p>
-                          <p className="text-[10px] text-muted">{s.submittedBy} • {s.timestamp}</p>
+                          <p className="text-xs font-medium text-white">{s.industryId} • {s.location}</p>
+                          <p className="text-[10px] text-muted">{s.submittedBy} • {new Date(s.timestamp).toLocaleString("en-IN")}</p>
                         </div>
                       </div>
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${statusStyle[s.status]}`}>{s.status}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${s.violationCount > 0 ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>
+                        {s.violationCount > 0 ? "Violation" : "Compliant"}
+                      </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted">
-                      {Object.entries(s.data).slice(0, 4).map(([k, v]) => (
-                        <span key={k} className="rounded bg-white/5 px-1.5 py-0.5">{k}: {v}</span>
-                      ))}
+                      <span className="rounded bg-white/5 px-1.5 py-0.5">{REPORT_KIND_LABELS[s.reportKind]}</span>
+                      <span className="rounded bg-white/5 px-1.5 py-0.5">Source: {SOURCE_LABELS[s.monitoringSource]}</span>
+                      <span className="rounded bg-white/5 px-1.5 py-0.5">Alerts: {s.violationCount}</span>
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            <div className="mt-5 rounded-lg border border-border bg-background p-3">
+              <p className="text-xs font-semibold text-white">Top Risk Snapshot</p>
+              <div className="mt-2 space-y-2">
+                {topRisk.map((r) => (
+                  <div key={r.industryId} className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300">{r.location}</span>
+                    <span className={r.status === "Compliant" ? "text-green-400" : r.status === "High Risk" ? "text-yellow-400" : "text-red-400"}>
+                      {r.status}
+                    </span>
+                  </div>
+                ))}
+                {topRisk.length === 0 && <p className="text-xs text-muted">No report data yet.</p>}
+              </div>
+            </div>
+
+            {lastViolationCount !== null && lastViolationCount > 0 && (
+              <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+                <div className="mb-1 flex items-center gap-2"><AlertTriangle size={12} /> Alert generated and Regional Officer notified.</div>
+                <p>Violation entries are available in the compliance dashboard.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

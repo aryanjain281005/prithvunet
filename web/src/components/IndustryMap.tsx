@@ -174,7 +174,11 @@ export default function IndustryMap() {
             zoom={selectedIndustrySummary ? 6 : 5}
             style={{ height: "470px", width: "100%" }}
             zoomControl={true}
-            whenReady={(event: { target: LeafletMap }) => setMapInstance(event.target)}
+            ref={(instance) => {
+              if (instance && instance !== mapInstance) {
+                setMapInstance(instance);
+              }
+            }}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

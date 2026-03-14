@@ -1,48 +1,21 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import type { UserRole } from "./types";
+import { AuthUser, ROLE_COLORS, ROLE_LABELS } from "@/lib/rbac";
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  region?: string;
-  avatar: string;
-}
-
-const DEMO_USERS: Record<UserRole, AuthUser> = {
-  super_admin: { id: "U001", name: "Dr. Rajesh Kumar", email: "rajesh@spcb.gov.in", role: "super_admin", region: "All India", avatar: "SA" },
-  regional_officer: { id: "U002", name: "Priya Sharma", email: "priya@mpcb.gov.in", role: "regional_officer", region: "Maharashtra", avatar: "RO" },
-  monitoring_team: { id: "U003", name: "Arun Patel", email: "arun@cpcb.gov.in", role: "monitoring_team", region: "Gujarat", avatar: "MT" },
-  industry_user: { id: "U004", name: "Vikram Singh", email: "vikram@tatasteel.com", role: "industry_user", region: "Jharkhand", avatar: "IU" },
-  citizen: { id: "U005", name: "Ananya Gupta", email: "ananya@gmail.com", role: "citizen", region: "Delhi", avatar: "CZ" },
-};
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  super_admin: "Super Admin (State HQ)",
-  regional_officer: "Regional Officer",
-  monitoring_team: "Monitoring Team",
-  industry_user: "Industry User",
-  citizen: "Citizen",
-};
-
-const ROLE_COLORS: Record<UserRole, string> = {
-  super_admin: "bg-purple-500/20 text-purple-400",
-  regional_officer: "bg-blue-500/20 text-blue-400",
-  monitoring_team: "bg-green-500/20 text-green-400",
-  industry_user: "bg-orange-500/20 text-orange-400",
-  citizen: "bg-cyan-500/20 text-cyan-400",
-};
+type LoginResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 interface AuthContextType {
   user: AuthUser | null;
-  role: UserRole;
-  setRole: (role: UserRole) => void;
-  login: (role: UserRole) => void;
-  logout: () => void;
+  role: UserRole | null;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   isLoggedIn: boolean;
+  loadingAuth: boolean;
   roleLabel: string;
   roleColor: string;
   hasAccess: (allowedRoles: UserRole[]) => boolean;
@@ -51,38 +24,89 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(DEMO_USERS.super_admin);
-  const [role, setRoleState] = useState<UserRole>("super_admin");
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
-  const setRole = (newRole: UserRole) => {
-    setRoleState(newRole);
-    setUser(DEMO_USERS[newRole]);
-  };
+  const role = user?.role ?? null;
 
-  const login = (selectedRole: UserRole) => {
-    setRole(selectedRole);
-  };
+  const refreshSession = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/session", { method: "GET", cache: "no-store" });
+      if (!response.ok) {
+        setUser(null);
+        return;
+      }
 
-  const logout = () => {
-    setUser(null);
-    setRoleState("citizen");
-  };
+      const payload = (await response.json()) as { user: AuthUser | null };
+      setUser(payload.user);
+    } catch {
+      setUser(null);
+    } finally {
+      setLoadingAuth(false);
+    }
+  }, []);
 
-  const hasAccess = (allowedRoles: UserRole[]) => {
-    return allowedRoles.includes(role);
-  };
+  useEffect(() => {
+    refreshSession();
+  }, [refreshSession]);
+
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const payload = (await response.json()) as { user?: AuthUser; error?: string };
+
+      if (!response.ok || !payload.user) {
+        return { ok: false, error: payload.error || "Invalid credentials" };
+      }
+
+      setUser(payload.user);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Unable to reach authentication service" };
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+    }
+  }, []);
+
+  const hasAccess = useCallback(
+    (allowedRoles: UserRole[]) => {
+      if (!role) {
+        return false;
+      }
+      return allowedRoles.includes(role);
+    },
+    [role],
+  );
+
+  const roleLabel = useMemo(() => (role ? ROLE_LABELS[role] : "Guest"), [role]);
+  const roleColor = useMemo(
+    () => (role ? ROLE_COLORS[role] : "bg-zinc-700/40 text-zinc-300"),
+    [role],
+  );
 
   return (
     <AuthContext.Provider
       value={{
         user,
         role,
-        setRole,
         login,
         logout,
+        refreshSession,
         isLoggedIn: user !== null,
-        roleLabel: ROLE_LABELS[role],
-        roleColor: ROLE_COLORS[role],
+        loadingAuth,
+        roleLabel,
+        roleColor,
         hasAccess,
       }}
     >
@@ -96,5 +120,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
-
-export { ROLE_LABELS, ROLE_COLORS, DEMO_USERS };

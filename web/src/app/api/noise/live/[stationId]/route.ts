@@ -195,7 +195,7 @@ async function fetchCpcbViaGuestSession(stationId: number): Promise<string> {
       Accept: "text/html,*/*",
     },
     method: "GET",
-  }, 8000);
+  }, 3000);
 
   upsertCookies(cookies, readSetCookieHeaders(homeResponse));
 
@@ -214,7 +214,7 @@ async function fetchCpcbViaGuestSession(stationId: number): Promise<string> {
       ...(cookies.size > 0 ? { Cookie: cookieHeader(cookies) } : {}),
     },
     body: loginBody.toString(),
-  }, 8000);
+  }, 3000);
 
   upsertCookies(cookies, readSetCookieHeaders(loginResponse));
 
@@ -226,7 +226,7 @@ async function fetchCpcbViaGuestSession(stationId: number): Promise<string> {
       Accept: "application/xml,text/xml,*/*",
       ...(cookies.size > 0 ? { Cookie: cookieHeader(cookies) } : {}),
     },
-  }, 9000);
+  }, 3500);
 
   return await dataResponse.text();
 }

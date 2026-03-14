@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { UserCog, Plus, Search, Shield, Trash2, Mail, Phone, MapPin } from "lucide-react";
 import type { UserRole } from "@/lib/types";
-import { ROLE_LABELS, ROLE_COLORS } from "@/lib/auth";
+import { ROLE_LABELS, ROLE_COLORS } from "@/lib/rbac";
 import { useSupabaseCRUD } from "@/lib/useSupabaseCRUD";
 
 interface TeamMember {
@@ -17,6 +17,8 @@ interface TeamMember {
   status: "Active" | "Inactive";
   lastLogin: string;
 }
+
+const MANAGED_ROLES: UserRole[] = ["super_admin", "regional_officer", "monitoring_team", "industry_user", "citizen"];
 
 const INITIAL_USERS: TeamMember[] = [
   { id: "U001", name: "Dr. Rajesh Kumar", email: "rajesh@spcb.gov.in", phone: "+91 98765 43210", role: "super_admin", region: "All India", team: "State HQ", status: "Active", lastLogin: "2026-03-10 09:30" },
@@ -75,7 +77,7 @@ export default function UsersPage() {
 
       {/* Role Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {(["super_admin", "regional_officer", "monitoring_team", "industry_user", "citizen"] as UserRole[]).map((r) => (
+        {MANAGED_ROLES.map((r) => (
           <div key={r} className="rounded-xl border border-border bg-card p-3 text-center">
             <p className="text-xl font-bold text-white">{roleCount(r)}</p>
             <p className={`mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold ${ROLE_COLORS[r]}`}>{ROLE_LABELS[r].split("(")[0].trim()}</p>
@@ -92,8 +94,8 @@ export default function UsersPage() {
             <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white placeholder:text-muted focus:border-primary focus:outline-none" />
             <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white placeholder:text-muted focus:border-primary focus:outline-none" />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })} className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white focus:border-primary focus:outline-none">
-              {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([r, label]) => (
-                <option key={r} value={r}>{label}</option>
+              {MANAGED_ROLES.map((r) => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
             </select>
             <input placeholder="Region" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white placeholder:text-muted focus:border-primary focus:outline-none" />
@@ -113,7 +115,7 @@ export default function UsersPage() {
           <input type="text" placeholder="Search name, email, team..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm text-white placeholder:text-muted focus:border-primary focus:outline-none" />
         </div>
         <button onClick={() => setFilterRole("all")} className={`rounded-lg px-3 py-2 text-xs font-medium ${filterRole === "all" ? "bg-white/10 text-white" : "text-muted hover:text-white"}`}>All Roles</button>
-        {(["super_admin", "regional_officer", "monitoring_team", "industry_user"] as UserRole[]).map((r) => (
+        {MANAGED_ROLES.map((r) => (
           <button key={r} onClick={() => setFilterRole(r)} className={`rounded-lg px-3 py-2 text-xs font-medium ${filterRole === r ? "bg-white/10 text-white" : "text-muted hover:text-white"}`}>
             {ROLE_LABELS[r].split("(")[0].trim()}
           </button>

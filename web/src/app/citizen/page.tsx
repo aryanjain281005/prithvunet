@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { Wind, Droplets, Volume2, MapPin, AlertTriangle, ExternalLink, Info, Shield, ChevronDown, ChevronUp } from "lucide-react";
 import { fetchMergedAirData, generateWaterData, generateNoiseData, getAQICategory, getAQIColor, getAQIEmoji } from "@/lib/api";
-import type { AQIReading, WaterReading, NoiseReading } from "@/lib/types";
-import Link from "next/link";
+import type { AQIReading, ComplaintCategory, PublicComplaintPayload, WaterReading, NoiseReading } from "@/lib/types";
 
 function HealthAdvisory({ aqi }: { aqi: number }) {
   if (aqi <= 50) return <p className="text-sm text-green-400">✅ Air quality is good. Enjoy outdoor activities!</p>;
@@ -22,6 +21,21 @@ export default function CitizenPage() {
   const [loading, setLoading] = useState(true);
   const [expandedCity, setExpandedCity] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"air" | "water" | "noise">("air");
+  const [complaint, setComplaint] = useState<PublicComplaintPayload>({
+    name: "",
+    mobile: "",
+    email: "",
+    address: "",
+    state: "",
+    city: "",
+    category: "air",
+    locationDetails: "",
+    observedAt: "",
+    description: "",
+  });
+  const [submittingComplaint, setSubmittingComplaint] = useState(false);
+  const [complaintError, setComplaintError] = useState("");
+  const [complaintSuccess, setComplaintSuccess] = useState<{ complaintId: string; createdAt: string; triagePriority?: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -35,6 +49,49 @@ export default function CitizenPage() {
   }, []);
 
   const avgAQI = airData.length > 0 ? Math.round(airData.reduce((s, r) => s + r.aqi, 0) / airData.length) : 0;
+
+  const updateComplaintField = <K extends keyof PublicComplaintPayload>(field: K, value: PublicComplaintPayload[K]) => {
+    setComplaint((current) => ({ ...current, [field]: value }));
+  };
+
+  const submitComplaint = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmittingComplaint(true);
+    setComplaintError("");
+    setComplaintSuccess(null);
+
+    try {
+      const response = await fetch("/api/public/complaints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(complaint),
+      });
+
+      const payload = (await response.json()) as { complaintId?: string; createdAt?: string; triagePriority?: string; error?: string };
+      if (!response.ok || !payload.complaintId || !payload.createdAt) {
+        setComplaintError(payload.error || "Complaint submission failed");
+        return;
+      }
+
+      setComplaintSuccess({ complaintId: payload.complaintId, createdAt: payload.createdAt, triagePriority: payload.triagePriority });
+      setComplaint({
+        name: "",
+        mobile: "",
+        email: "",
+        address: "",
+        state: "",
+        city: "",
+        category: "air",
+        locationDetails: "",
+        observedAt: "",
+        description: "",
+      });
+    } catch {
+      setComplaintError("Complaint submission failed");
+    } finally {
+      setSubmittingComplaint(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -71,6 +128,37 @@ export default function CitizenPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <div className="mb-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <section className="rounded-2xl border border-border bg-card p-6 sm:p-8">
+            <p className="text-xs uppercase tracking-[0.2em] text-emerald-400">Public Access</p>
+            <h2 className="mt-3 text-2xl font-semibold text-white">Register an Environmental Complaint</h2>
+            <p className="mt-2 text-sm text-muted">
+              Citizens can report air, water, noise, industrial discharge, waste burning, or other environmental incidents without logging in.
+            </p>
+            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 text-sm text-zinc-300">
+              Submit accurate location and incident details so the complaint can be routed to the appropriate Regional Officer or Monitoring Team.
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border bg-card p-6">
+            <h3 className="text-sm font-semibold text-white">Complaint Categories</h3>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-300 sm:grid-cols-3">
+              {[
+                "air",
+                "water",
+                "noise",
+                "industrial_discharge",
+                "waste_burning",
+                "other",
+              ].map((item) => (
+                <div key={item} className="rounded-lg bg-background px-3 py-2 capitalize">
+                  {item.replaceAll("_", " ")}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
         {/* Hero AQI Card */}
         <div className="mb-6 rounded-2xl border border-border bg-card p-6 sm:p-8">
           <div className="flex flex-col items-center gap-6 sm:flex-row">
@@ -266,6 +354,84 @@ export default function CitizenPage() {
             </div>
           </div>
         </div>
+
+        <section className="mt-8 rounded-2xl border border-border bg-card p-6 sm:p-8">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-blue-400">Complaint Desk</p>
+              <h3 className="mt-2 text-xl font-semibold text-white">Submit Complaint Details</h3>
+              <p className="mt-1 text-sm text-muted">No login required. Provide complete contact and incident information for action.</p>
+            </div>
+            <div className="text-xs text-zinc-500">Fields marked by form validation are mandatory</div>
+          </div>
+
+          <form onSubmit={submitComplaint} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Full Name</span>
+              <input value={complaint.name} onChange={(e) => updateComplaintField("name", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Mobile Number</span>
+              <input value={complaint.mobile} onChange={(e) => updateComplaintField("mobile", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Email</span>
+              <input type="email" value={complaint.email} onChange={(e) => updateComplaintField("email", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Complaint Category</span>
+              <select value={complaint.category} onChange={(e) => updateComplaintField("category", e.target.value as ComplaintCategory)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70">
+                <option value="air">Air</option>
+                <option value="water">Water</option>
+                <option value="noise">Noise</option>
+                <option value="industrial_discharge">Industrial Discharge</option>
+                <option value="waste_burning">Waste Burning</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="block lg:col-span-2">
+              <span className="mb-1.5 block text-xs text-zinc-400">Full Address</span>
+              <textarea value={complaint.address} onChange={(e) => updateComplaintField("address", e.target.value)} required rows={3} className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">State</span>
+              <input value={complaint.state} onChange={(e) => updateComplaintField("state", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">City / District</span>
+              <input value={complaint.city} onChange={(e) => updateComplaintField("city", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Observed Date & Time</span>
+              <input type="datetime-local" value={complaint.observedAt} onChange={(e) => updateComplaintField("observedAt", e.target.value)} required className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs text-zinc-400">Location Details</span>
+              <input value={complaint.locationDetails} onChange={(e) => updateComplaintField("locationDetails", e.target.value)} required placeholder="Landmark, nearby road, plant gate, river stretch" className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" />
+            </label>
+            <label className="block lg:col-span-2">
+              <span className="mb-1.5 block text-xs text-zinc-400">Complaint Description</span>
+              <textarea value={complaint.description} onChange={(e) => updateComplaintField("description", e.target.value)} required rows={5} className="w-full rounded-lg border border-white/15 bg-background px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/70" placeholder="Describe what happened, duration, intensity, affected area, and any health or environmental impact observed." />
+            </label>
+
+            <div className="lg:col-span-2">
+              {complaintError && <p className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{complaintError}</p>}
+              {complaintSuccess && (
+                <div className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200">
+                  Complaint submitted successfully. Reference ID: <span className="font-semibold text-white">{complaintSuccess.complaintId}</span>
+                  {complaintSuccess.triagePriority && (
+                    <span className="mt-1 block text-xs text-emerald-100">
+                      AI triage priority: <span className="font-semibold text-white">{complaintSuccess.triagePriority}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+              <button type="submit" disabled={submittingComplaint} className="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60">
+                {submittingComplaint ? "Submitting..." : "Submit Complaint"}
+              </button>
+            </div>
+          </form>
+        </section>
       </main>
 
       {/* Footer */}

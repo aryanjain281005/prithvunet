@@ -64,6 +64,22 @@ export interface WaterReading {
   timestamp: string;
 }
 
+export type WaterStatus = WaterReading["status"];
+
+export interface WaterApiResponse {
+  stations: WaterReading[];
+  filters: {
+    states: string[];
+    cities: string[];
+    stations: string[];
+    statuses: WaterStatus[];
+  };
+  meta: {
+    count: number;
+    updatedAt: string;
+  };
+}
+
 // --- Noise Types ---
 export interface NoiseReading {
   stationId: string;
@@ -165,6 +181,33 @@ export interface User {
   region?: string;
 }
 
+export type ComplaintCategory =
+  | "air"
+  | "water"
+  | "noise"
+  | "industrial_discharge"
+  | "waste_burning"
+  | "other";
+
+export interface PublicComplaintPayload {
+  name: string;
+  mobile: string;
+  email: string;
+  address: string;
+  state: string;
+  city: string;
+  category: ComplaintCategory;
+  locationDetails: string;
+  observedAt: string;
+  description: string;
+}
+
+export interface PublicComplaintRecord extends PublicComplaintPayload {
+  complaintId: string;
+  status: "Submitted";
+  createdAt: string;
+}
+
 // --- Dashboard Stats ---
 export interface DashboardStats {
   totalStations: number;
@@ -244,7 +287,10 @@ export interface CPCBReading {
   station_latitude: number;
   station_longitude: number;
   stationparameter_longname: string;
+  stationparameter_name?: string;
   stationparameter_no: string;
+  ts_shortname?: string;
+  ts_name?: string;
   station_id: string;
   station_no: string;
   station_name: string;

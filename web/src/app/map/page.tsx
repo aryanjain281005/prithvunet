@@ -1,5 +1,6 @@
 "use client";
 
+import type { Map as LeafletMap } from "leaflet";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -121,6 +122,7 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mapInstance, setMapInstance] = useState<LeafletMap | null>(null);
 
   const [stations, setStations] = useState<AirStation[]>([]);
   const [selectedReading, setSelectedReading] = useState<AirStation | null>(null);
@@ -229,7 +231,6 @@ export default function MapPage() {
       setSelectedReading(activeStation);
       if (activeStation) {
         setSelectedStation(activeStation.stationName);
-        await loadForecast(activeStation);
       } else {
         setForecastPoints([]);
       }
@@ -253,11 +254,24 @@ export default function MapPage() {
   }, [mounted]);
 
   useEffect(() => {
-    if (selectedReading) {
-      loadForecast(selectedReading);
+    if (!mapInstance || !selectedReading) {
+      return;
     }
+
+    mapInstance.flyTo([selectedReading.lat, selectedReading.lng], Math.max(mapInstance.getZoom(), 6), {
+      duration: 0.45,
+    });
+  }, [mapInstance, selectedReading]);
+
+  useEffect(() => {
+    if (!selectedReading) {
+      setForecastPoints([]);
+      return;
+    }
+
+    void loadForecast(selectedReading);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forecastHours]);
+  }, [selectedReading, forecastHours]);
 
   const mapCenter = useMemo<[number, number]>(() => {
     if (!selectedReading) return INDIA_CENTER;
@@ -330,7 +344,7 @@ export default function MapPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-screen flex-col bg-[#06080d]">
+    <div className="flex min-h-screen flex-col bg-[#06080d]">
       <header className="border-b border-white/10 bg-[#0a0a0f] px-4 py-3 lg:px-6">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -450,19 +464,23 @@ export default function MapPage() {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_360px]">
-        <section className="relative min-h-[420px] border-b border-white/10 lg:border-b-0 lg:border-r lg:border-r-white/10">
-          {loading ? (
+      <div className="grid grid-cols-1 lg:min-h-[620px] lg:grid-cols-[1fr_360px]">
+        <section className="relative min-h-[460px] border-b border-white/10 lg:min-h-[620px] lg:border-b-0 lg:border-r lg:border-r-white/10">
+          {loading && stations.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <p className="text-sm text-zinc-400">Loading station data...</p>
             </div>
           ) : (
             <MapContainer
-              key={selectedReading?.stationId || "india-map"}
               center={mapCenter}
               zoom={selectedReading ? 7 : 5}
               style={{ height: "100%", width: "100%" }}
               zoomControl={true}
+              ref={(instance) => {
+                if (instance && instance !== mapInstance) {
+                  setMapInstance(instance);
+                }
+              }}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -494,7 +512,6 @@ export default function MapPage() {
                     click: () => {
                       setSelectedReading(station);
                       setSelectedStation(station.stationName);
-                      loadForecast(station);
                     },
                   }}
                 >
@@ -534,7 +551,7 @@ export default function MapPage() {
           </div>
         </section>
 
-        <aside className="h-full overflow-y-auto bg-[#0a0a0f] p-4">
+        <aside className="overflow-y-auto bg-[#0a0a0f] p-4 lg:max-h-[620px]">
           <h2 className="mb-1 text-sm font-semibold text-white">Pollution Details</h2>
           <p className="mb-4 text-xs text-zinc-500">
             {stations.length} monitoring stations loaded
@@ -601,7 +618,6 @@ export default function MapPage() {
                       onClick={() => {
                         setSelectedReading(station);
                         setSelectedStation(station.stationName);
-                        loadForecast(station);
                       }}
                       className={`w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
                         selectedReading.stationId === station.stationId

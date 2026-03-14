@@ -6,6 +6,7 @@ import {
   AQIReading,
   AQICategory,
   WaterReading,
+  WaterApiResponse,
   NoiseReading,
   Industry,
   Alert,
@@ -17,6 +18,7 @@ import {
   CPCBReading,
   DataGovAirRecord,
 } from "./types";
+import { formatWaterStations } from "./water";
 import {
   WAQI_API_BASE,
   WAQI_API_TOKEN,
@@ -312,91 +314,22 @@ function generateSimulatedAirData(): AQIReading[] {
 }
 
 export async function generateWaterData(): Promise<WaterReading[]> {
-  // Try real CPCB RTWQMS data first via our API proxy
   try {
-    const res = await fetch("/api/water?type=data");
+    const res = await fetch("/api/water?format=stations", { cache: "no-store" });
     if (res.ok) {
-      const readings: CPCBReading[] = await res.json();
-      if (Array.isArray(readings) && readings.length > 0) {
-        return transformCPCBToWaterReadings(readings);
+      const payload = (await res.json()) as WaterApiResponse | CPCBReading[];
+      if (Array.isArray(payload) && payload.length > 0) {
+        return formatWaterStations(payload);
+      }
+
+      if (Array.isArray((payload as WaterApiResponse).stations)) {
+        return (payload as WaterApiResponse).stations;
       }
     }
   } catch {
-    // Fall through to simulated data
   }
 
   return generateSimulatedWaterData();
-}
-
-// Map CPCB parameter codes to our WaterReading parameter keys
-const CPCB_PARAM_MAP: Record<string, keyof WaterReading["parameters"]> = {
-  pH: "ph",
-  BOD: "bod",
-  DO: "dissolvedOxygen",
-  COD: "cod",
-  WT: "temperature",
-  NO3: "nitrate",
-  CL: "chloride",
-  EC: "conductivity",
-  TOC: "toc",
-  WTb: "turbidity",
-};
-
-function transformCPCBToWaterReadings(readings: CPCBReading[]): WaterReading[] {
-  // Group readings by station_no (each station has multiple parameters)
-  const stationMap = new Map<string, CPCBReading[]>();
-  for (const r of readings) {
-    if (!stationMap.has(r.station_no)) {
-      stationMap.set(r.station_no, []);
-    }
-    stationMap.get(r.station_no)!.push(r);
-  }
-
-  const waterReadings: WaterReading[] = [];
-
-  for (const [stationNo, stationReadings] of stationMap) {
-    const first = stationReadings[0];
-    const params: WaterReading["parameters"] = {};
-
-    // Pivot parameter readings into a single object
-    for (const r of stationReadings) {
-      const key = CPCB_PARAM_MAP[r.stationparameter_no];
-      if (key && r.ts_value != null && !isNaN(r.ts_value)) {
-        (params as Record<string, number>)[key] = r.ts_value;
-      }
-    }
-
-    // Extract river name and location from station_name format: "BH72_River Ganga at Chausa, U/s of Buxar"
-    const nameParts = first.station_name.split("_");
-    const fullName = nameParts.length > 1 ? nameParts.slice(1).join("_") : first.station_name;
-    const riverMatch = fullName.match(/(?:River\s+)?(\w[\w\s]*?)\s+(?:at|near|@)/i);
-    const riverName = riverMatch ? riverMatch[1].trim() : "Unknown";
-    const locationMatch = fullName.match(/(?:at|near|@)\s+(.+?)(?:,|$)/i);
-    const city = locationMatch ? locationMatch[1].trim() : first.territory_name;
-
-    // Derive water quality status from BOD and DO values
-    let status: WaterReading["status"] = "Safe";
-    const bod = params.bod;
-    const doxy = params.dissolvedOxygen;
-    if ((bod != null && bod > 10) || (doxy != null && doxy < 2)) status = "Critical";
-    else if ((bod != null && bod > 6) || (doxy != null && doxy < 4)) status = "Polluted";
-    else if ((bod != null && bod > 3) || (doxy != null && doxy < 6)) status = "Caution";
-
-    waterReadings.push({
-      stationId: stationNo,
-      stationName: fullName,
-      riverName,
-      city,
-      state: first.territory_name,
-      lat: first.station_latitude,
-      lng: first.station_longitude,
-      parameters: params,
-      status,
-      timestamp: first.timestamp,
-    });
-  }
-
-  return waterReadings;
 }
 
 function generateSimulatedWaterData(): WaterReading[] {

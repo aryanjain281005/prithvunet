@@ -119,24 +119,46 @@ export function NoiseProvider({ children }: { children: React.ReactNode }) {
   });
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const requestVersionRef = useRef(0);
+
+  const commitStations = useCallback((stationData: NoiseStation[]) => {
+    setStations(stationData);
+    setStats(buildSummary(stationData));
+    setLastUpdated(new Date().toISOString());
+  }, []);
 
   const fetchData = useCallback(async (isManual = false) => {
+    const requestVersion = ++requestVersionRef.current;
+
     if (isManual) {
       setRefreshing(true);
     }
 
     try {
-      const stationData = sortStations(await fetchAllStationData());
-      setStations(stationData);
-      setStats(buildSummary(stationData));
-      setLastUpdated(new Date().toISOString());
+      const fastData = sortStations(await fetchAllStationData("fast"));
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
+
+      commitStations(fastData);
     } catch (error) {
       console.error("[NoiseContext] fallback fetch error", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+
+    try {
+      const liveData = sortStations(await fetchAllStationData("full"));
+      if (requestVersion !== requestVersionRef.current) {
+        return;
+      }
+
+      commitStations(liveData);
+    } catch (error) {
+      console.error("[NoiseContext] live refresh error", error);
+    }
+  }, [commitStations]);
 
   useEffect(() => {
     fetchData();

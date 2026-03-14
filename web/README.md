@@ -1,5 +1,13 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase Backend Setup
+
+For PrithviNet backend setup with Supabase, use:
+
+- `SUPABASE_BACKEND_SETUP.md` for step-by-step setup
+- `supabase-schema.sql` for the complete schema and RLS policies
+- `.env.example` for required environment variables
+
 ## Getting Started
 
 First, run the development server:

@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Map,
   Bell,
+  Droplets,
   Factory,
   BarChart3,
   Bot,
@@ -21,13 +23,12 @@ import {
   ClipboardList,
   FileText,
   Siren,
-  ChevronDown,
   ChevronRight,
-  Settings,
+  LogOut,
+  Volume2,
 } from "lucide-react";
-  import { Volume2 } from "lucide-react";
 import { useState } from "react";
-import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import type { UserRole } from "@/lib/types";
 
 interface NavItem {
@@ -57,7 +58,7 @@ const navGroups: NavGroup[] = [
     label: "Monitoring",
     collapsible: true,
     items: [
-      { name: "Submit Data", href: "/monitoring/submit", icon: ClipboardList, roles: ["super_admin", "monitoring_team", "industry_user"] },
+      { name: "Submit Data", href: "/monitoring/submit", icon: ClipboardList, roles: ["industry_user"] },
       { name: "Logs", href: "/monitoring/logs", icon: FileText, roles: ["super_admin", "regional_officer", "monitoring_team"] },
       { name: "Campaigns", href: "/monitoring/campaigns", icon: Siren, roles: ["super_admin", "regional_officer", "monitoring_team"] },
     ],
@@ -68,6 +69,13 @@ const navGroups: NavGroup[] = [
     items: [
       { name: "Cases", href: "/compliance", icon: Shield, roles: ["super_admin", "regional_officer"] },
       { name: "Industries", href: "/industries", icon: Factory, roles: ["super_admin", "regional_officer", "industry_user"] },
+    ],
+  },
+  {
+    label: "Water",
+    collapsible: true,
+    items: [
+      { name: "Water Monitor", href: "/water", icon: Droplets, roles: ["super_admin", "regional_officer", "monitoring_team"] },
     ],
   },
     {
@@ -93,23 +101,28 @@ const navGroups: NavGroup[] = [
       { name: "Locations", href: "/admin/locations", icon: MapPin, roles: ["super_admin", "regional_officer"] },
       { name: "Limits", href: "/admin/limits", icon: Ruler, roles: ["super_admin"] },
       { name: "Users", href: "/admin/users", icon: UserCog, roles: ["super_admin", "regional_officer"] },
+      { name: "Complaint Triage", href: "/admin/complaints", icon: ClipboardList, roles: ["super_admin", "regional_officer"] },
+      { name: "Copilot Logs", href: "/admin/copilot-logs", icon: Bot, roles: ["super_admin", "regional_officer"] },
     ],
   },
   {
     label: "Public",
     items: [
-      { name: "Citizen Portal", href: "/citizen", icon: Users, roles: ["citizen", "super_admin"] },
+      { name: "Citizen Portal", href: "/citizen", icon: Users, roles: ["super_admin", "regional_officer", "monitoring_team", "industry_user"] },
     ],
   },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const { user, role, setRole, roleLabel, roleColor } = useAuth();
+  const { user, role, roleLabel, roleColor, logout, loadingAuth } = useAuth();
 
+  if (pathname === "/login") return null;
+  if (loadingAuth) return null;
+  if (!role) return null;
   if (pathname === "/citizen" && role === "citizen") return null;
 
   const visibleGroups = navGroups
@@ -122,6 +135,12 @@ export default function Sidebar() {
     group.collapsible && collapsed[label] !== undefined ? collapsed[label] : group.collapsible && !isGroupActive(group);
 
   const toggleGroup = (label: string) => setCollapsed((prev) => ({ ...prev, [label]: !prev[label] }));
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <>
@@ -216,36 +235,13 @@ export default function Sidebar() {
           {/* Divider */}
           <div className="h-px bg-white/5" />
 
-          {/* Role switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setRoleMenuOpen(!roleMenuOpen)}
-              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors hover:bg-white/[0.04]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-zinc-500">Role:</span>
-                <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${roleColor}`}>
-                  {roleLabel}
-                </span>
-              </div>
-              <ChevronDown size={12} className={`text-zinc-500 transition-transform ${roleMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-            {roleMenuOpen && (
-              <div className="absolute bottom-full left-0 mb-1 w-full rounded-xl border border-white/10 bg-[#111113] p-1.5 shadow-2xl">
-                {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([r, label]) => (
-                  <button
-                    key={r}
-                    onClick={() => { setRole(r); setRoleMenuOpen(false); }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.06] ${r === role ? "text-white" : "text-zinc-400"}`}
-                  >
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${ROLE_COLORS[r]}`}>
-                      {label.split("(")[0].trim()}
-                    </span>
-                    {r === role && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="rounded-lg px-3 py-2 text-xs">
+            <span className="text-[11px] text-zinc-500">Role:</span>
+            <div className="mt-1">
+              <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${roleColor}`}>
+                {roleLabel}
+              </span>
+            </div>
           </div>
 
           {/* User info */}
@@ -258,6 +254,13 @@ export default function Sidebar() {
               <p className="truncate text-[11px] text-zinc-500">{user?.region || ""}</p>
             </div>
           </div>
+
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/[0.05]"
+          >
+            <LogOut size={13} /> Sign out
+          </button>
         </div>
       </aside>
 

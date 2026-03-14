@@ -300,3 +300,274 @@ CREATE POLICY "Allow delete" ON compliance_cases FOR DELETE USING (true);
 CREATE POLICY "Allow insert" ON reports FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow update" ON reports FOR UPDATE USING (true);
 CREATE POLICY "Allow delete" ON reports FOR DELETE USING (true);
+
+-- ============================================
+-- AI Backend Extensions (Hackathon)
+-- ============================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Citizen complaints + NLP triage
+CREATE TABLE IF NOT EXISTS public_complaints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  complaint_id TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  mobile TEXT NOT NULL,
+  email TEXT NOT NULL,
+  address TEXT NOT NULL,
+  state TEXT NOT NULL,
+  city TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('air', 'water', 'noise', 'industrial_discharge', 'waste_burning', 'other')),
+  location_details TEXT NOT NULL,
+  observed_at TIMESTAMPTZ NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Submitted' CHECK (status IN ('Submitted', 'Under Review', 'Verified', 'Action Initiated', 'Resolved', 'Rejected')),
+  triage_priority TEXT NOT NULL DEFAULT 'Medium' CHECK (triage_priority IN ('Low', 'Medium', 'High', 'Critical')),
+  sensor_corroboration_score NUMERIC(4,2) NOT NULL DEFAULT 0 CHECK (sensor_corroboration_score >= 0 AND sensor_corroboration_score <= 1),
+  triage_summary TEXT NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS complaint_triage_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  complaint_ref UUID NOT NULL REFERENCES public_complaints(id) ON DELETE CASCADE,
+  model_version TEXT NOT NULL DEFAULT 'rules-v1',
+  sentiment_score NUMERIC(4,2),
+  extracted_entities JSONB NOT NULL DEFAULT '{}'::jsonb,
+  evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+  decision TEXT NOT NULL CHECK (decision IN ('Low', 'Medium', 'High', 'Critical')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- AI copilot + simulation persistence
+CREATE TABLE IF NOT EXISTS ai_copilot_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id TEXT NOT NULL DEFAULT '',
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  role TEXT NOT NULL DEFAULT 'unknown',
+  region TEXT NOT NULL DEFAULT 'Unknown',
+  query TEXT NOT NULL,
+  context JSONB NOT NULL DEFAULT '{}'::jsonb,
+  response TEXT NOT NULL,
+  intent TEXT NOT NULL DEFAULT 'general',
+  location_lat DOUBLE PRECISION,
+  location_lng DOUBLE PRECISION,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ai_copilot_logs ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'Unknown';
+
+CREATE TABLE IF NOT EXISTS ai_simulations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scenario_id TEXT UNIQUE NOT NULL,
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  region TEXT NOT NULL DEFAULT 'Unknown',
+  scenario_type TEXT NOT NULL CHECK (scenario_type IN ('policy_what_if', 'shutdown_top_k', 'festival_control', 'traffic_control', 'custom')),
+  request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  risk_before NUMERIC(10,2),
+  risk_after NUMERIC(10,2),
+  delta NUMERIC(10,2),
+  confidence_lower NUMERIC(10,2),
+  confidence_upper NUMERIC(10,2),
+  horizon_days INT NOT NULL DEFAULT 7,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_simulation_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  simulation_ref UUID NOT NULL REFERENCES ai_simulations(id) ON DELETE CASCADE,
+  report_id TEXT UNIQUE NOT NULL,
+  format TEXT NOT NULL CHECK (format IN ('markdown', 'json')),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Citizen utility layers
+CREATE TABLE IF NOT EXISTS citizen_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_id TEXT UNIQUE NOT NULL,
+  user_id TEXT NOT NULL,
+  state TEXT,
+  city TEXT,
+  window_days INT NOT NULL DEFAULT 30,
+  summary TEXT NOT NULL,
+  recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS recommendation_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  event_type TEXT NOT NULL CHECK (event_type IN ('popup_shown', 'popup_clicked', 'popup_dismissed', 'subscription_opt_in')),
+  topic TEXT NOT NULL,
+  context JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_location_context (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  accuracy_m DOUBLE PRECISION,
+  source TEXT NOT NULL DEFAULT 'browser' CHECK (source IN ('browser', 'manual', 'gps')),
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_alert_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL DEFAULT 'anonymous',
+  phone TEXT,
+  email TEXT,
+  region TEXT NOT NULL,
+  radius_km NUMERIC(6,2) NOT NULL DEFAULT 5,
+  channels TEXT[] NOT NULL DEFAULT ARRAY['sms'],
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for high-frequency API filters
+CREATE INDEX IF NOT EXISTS idx_public_complaints_created_at ON public_complaints(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_public_complaints_region ON public_complaints(state, city);
+CREATE INDEX IF NOT EXISTS idx_public_complaints_status_priority ON public_complaints(status, triage_priority);
+CREATE INDEX IF NOT EXISTS idx_complaint_triage_events_complaint_ref ON complaint_triage_events(complaint_ref);
+CREATE INDEX IF NOT EXISTS idx_ai_copilot_logs_created_at ON ai_copilot_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_copilot_logs_user_id ON ai_copilot_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_copilot_logs_region ON ai_copilot_logs(region);
+CREATE INDEX IF NOT EXISTS idx_ai_simulations_scenario_id ON ai_simulations(scenario_id);
+CREATE INDEX IF NOT EXISTS idx_ai_simulations_user_region ON ai_simulations(user_id, region);
+CREATE INDEX IF NOT EXISTS idx_ai_simulations_created_at ON ai_simulations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_simulation_reports_simulation_ref ON ai_simulation_reports(simulation_ref);
+CREATE INDEX IF NOT EXISTS idx_citizen_reports_user_id ON citizen_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_recommendation_events_user_topic ON recommendation_events(user_id, topic);
+CREATE INDEX IF NOT EXISTS idx_user_location_context_user_captured ON user_location_context(user_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_alert_subscriptions_user_region ON user_alert_subscriptions(user_id, region);
+
+-- Keep updated_at current
+DROP TRIGGER IF EXISTS trg_public_complaints_updated_at ON public_complaints;
+CREATE TRIGGER trg_public_complaints_updated_at
+BEFORE UPDATE ON public_complaints
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_ai_simulations_updated_at ON ai_simulations;
+CREATE TRIGGER trg_ai_simulations_updated_at
+BEFORE UPDATE ON ai_simulations
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_user_alert_subscriptions_updated_at ON user_alert_subscriptions;
+CREATE TRIGGER trg_user_alert_subscriptions_updated_at
+BEFORE UPDATE ON user_alert_subscriptions
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+-- Row-level security for AI tables
+ALTER TABLE public_complaints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE complaint_triage_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_copilot_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_simulations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_simulation_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE citizen_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recommendation_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_location_context ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_alert_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow read access" ON public_complaints;
+DROP POLICY IF EXISTS "Allow insert" ON public_complaints;
+DROP POLICY IF EXISTS "Allow update" ON public_complaints;
+DROP POLICY IF EXISTS "Allow delete" ON public_complaints;
+CREATE POLICY "Allow read access" ON public_complaints FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON public_complaints FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON public_complaints FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON public_complaints FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON complaint_triage_events;
+DROP POLICY IF EXISTS "Allow insert" ON complaint_triage_events;
+DROP POLICY IF EXISTS "Allow update" ON complaint_triage_events;
+DROP POLICY IF EXISTS "Allow delete" ON complaint_triage_events;
+CREATE POLICY "Allow read access" ON complaint_triage_events FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON complaint_triage_events FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON complaint_triage_events FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON complaint_triage_events FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON ai_copilot_logs;
+DROP POLICY IF EXISTS "Allow insert" ON ai_copilot_logs;
+DROP POLICY IF EXISTS "Allow update" ON ai_copilot_logs;
+DROP POLICY IF EXISTS "Allow delete" ON ai_copilot_logs;
+CREATE POLICY "Allow read access" ON ai_copilot_logs FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON ai_copilot_logs FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON ai_copilot_logs FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON ai_copilot_logs FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON ai_simulations;
+DROP POLICY IF EXISTS "Allow insert" ON ai_simulations;
+DROP POLICY IF EXISTS "Allow update" ON ai_simulations;
+DROP POLICY IF EXISTS "Allow delete" ON ai_simulations;
+CREATE POLICY "Allow read access" ON ai_simulations FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON ai_simulations FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON ai_simulations FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON ai_simulations FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON ai_simulation_reports;
+DROP POLICY IF EXISTS "Allow insert" ON ai_simulation_reports;
+DROP POLICY IF EXISTS "Allow update" ON ai_simulation_reports;
+DROP POLICY IF EXISTS "Allow delete" ON ai_simulation_reports;
+CREATE POLICY "Allow read access" ON ai_simulation_reports FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON ai_simulation_reports FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON ai_simulation_reports FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON ai_simulation_reports FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON citizen_reports;
+DROP POLICY IF EXISTS "Allow insert" ON citizen_reports;
+DROP POLICY IF EXISTS "Allow update" ON citizen_reports;
+DROP POLICY IF EXISTS "Allow delete" ON citizen_reports;
+CREATE POLICY "Allow read access" ON citizen_reports FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON citizen_reports FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON citizen_reports FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON citizen_reports FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON recommendation_events;
+DROP POLICY IF EXISTS "Allow insert" ON recommendation_events;
+DROP POLICY IF EXISTS "Allow update" ON recommendation_events;
+DROP POLICY IF EXISTS "Allow delete" ON recommendation_events;
+CREATE POLICY "Allow read access" ON recommendation_events FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON recommendation_events FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON recommendation_events FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON recommendation_events FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON user_location_context;
+DROP POLICY IF EXISTS "Allow insert" ON user_location_context;
+DROP POLICY IF EXISTS "Allow update" ON user_location_context;
+DROP POLICY IF EXISTS "Allow delete" ON user_location_context;
+CREATE POLICY "Allow read access" ON user_location_context FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON user_location_context FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON user_location_context FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON user_location_context FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow read access" ON user_alert_subscriptions;
+DROP POLICY IF EXISTS "Allow insert" ON user_alert_subscriptions;
+DROP POLICY IF EXISTS "Allow update" ON user_alert_subscriptions;
+DROP POLICY IF EXISTS "Allow delete" ON user_alert_subscriptions;
+CREATE POLICY "Allow read access" ON user_alert_subscriptions FOR SELECT USING (true);
+CREATE POLICY "Allow insert" ON user_alert_subscriptions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update" ON user_alert_subscriptions FOR UPDATE USING (true);
+CREATE POLICY "Allow delete" ON user_alert_subscriptions FOR DELETE USING (true);
